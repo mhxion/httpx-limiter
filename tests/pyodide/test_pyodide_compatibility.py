@@ -14,11 +14,45 @@
 
 
 """Test httpx-limiter's compatibility with Pyodide."""
-
-import pytest
 from pytest_pyodide import run_in_pyodide
+from pytest_pyodide.decorator import copy_files_to_pyodide
 
 
-@run_in_pyodide(packages=["httpx-limiter"])
-def test_imports(selenium_standalone):
+@run_in_pyodide
+def test_python_in_pyodide(selenium):
+    import sys
+
+    assert sys.platform == "emscripten"
+
+
+@copy_files_to_pyodide(
+    file_list=[("dist/", "dist/")], install_wheels=True, recurse_directories=False
+)
+@run_in_pyodide(packages=["ssl", "micropip"])
+async def test_imports(selenium_standalone):
+    import micropip
+    await micropip.install(["httpx~=0.25", "aiolimiter~=1.2"])
+
+    import httpx
     from httpx_limiter.aiolimiter import AiolimiterAsyncLimiter
+
+
+@copy_files_to_pyodide(
+    file_list=[("dist/", "dist/")], install_wheels=True, recurse_directories=False
+)
+@run_in_pyodide(packages=["ssl", "micropip"])
+async def test_status(selenium_standalone):
+    import micropip
+
+    await micropip.install(["httpx~=0.25", "aiolimiter~=1.2"])
+    # Passing the offline .whl path to micropip.install does not work.
+    # But a remote path to .whl does!
+
+    import httpx
+    from httpx_limiter.aiolimiter import AiolimiterAsyncLimiter
+    from httpx_limiter import AsyncRateLimitedTransport, Rate
+
+    limiter = AiolimiterAsyncLimiter.create(Rate.create(magnitude=10, duration=1))
+    async with httpx.AsyncClient(transport=AsyncRateLimitedTransport.create(limiter=limiter)) as client:
+        response = await client.get("https://httpbin.org/status/200")
+        assert response.status_code == 200
